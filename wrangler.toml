@@ -1,4 +1,17 @@
 name = "play-purchase-worker"
 main = "index.js"
 compatibility_date = "2025-08-26"
-type = "javascript"
+
+# ================= Environment Secrets =================
+# Secret yang sudah kamu buat di dashboard Cloudflare
+[vars]
+GOOGLE_CLIENT_EMAIL = ""
+GOOGLE_PRIVATE_KEY = ""
+
+# ================= Observability =================
+[observability.logs]
+enabled = true
+
+# ================= Routes / Domains =================
+# Bisa kamu atur sesuai kebutuhan; contoh workers.dev
+# routes = ["https://play-purchase-worker.chat33app.workers.dev/*"]
