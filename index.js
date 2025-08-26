@@ -2,15 +2,12 @@ export default {
   async fetch(request) {
     if (request.method === "POST") {
       try {
-        // Baca body JSON
+        // Ambil JSON dari request
         const { userId, productId, purchaseToken } = await request.json();
 
-        // Debug log (hilangkan di production)
         console.log("Request masuk:", userId, productId, purchaseToken);
 
-        // 👉 TODO: di sini kamu bisa tambah verifikasi beneran
-        // misalnya connect ke Google Play API
-        // untuk sekarang dummy cek aja:
+        // Dummy check → nanti bisa diganti cek real Google Play API
         if (purchaseToken && purchaseToken.startsWith("gp_")) {
           return new Response("VALID", { status: 200 });
         } else {
