@@ -1,6 +1,6 @@
 name = "play-purchase-worker"
 main = "index.js"
-compatibility_date = "2025-08-26"  # HARUS HARI INI ATAU SEBELUMNYA
+compatibility_date = "2025-08-26"  # jangan di masa depan
 
 [vars]
 GOOGLE_CLIENT_EMAIL = "iap-verifier-379@onesignal-6e467.iam.gserviceaccount.com"
@@ -38,4 +38,5 @@ PACKAGE_NAME = "com.chatmoz.app"
 
 [observability.logs]
 enabled = true
+
 
