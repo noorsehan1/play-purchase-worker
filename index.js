@@ -1,12 +1,11 @@
 import jwt from '@tsndr/cloudflare-worker-jwt';
 
-// Ambil dari wrangler.toml
 const GOOGLE_CLIENT_EMAIL = GOOGLE_CLIENT_EMAIL;
-const GOOGLE_PRIVATE_KEY = GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'); // ubah \n menjadi newline
+const GOOGLE_PRIVATE_KEY = GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n');
 const PACKAGE_NAME = PACKAGE_NAME;
 
 export default {
-  async fetch(request, env) {
+  async fetch(request) {
     if (request.method !== 'POST') {
       return new Response('Method not allowed', { status: 405 });
     }
@@ -16,10 +15,10 @@ export default {
       const { productId, purchaseToken } = data;
 
       if (!productId || !purchaseToken) {
-        return new Response('INVALID', { status: 400 });
+        return new Response('INVALID', { status: 200 });
       }
 
-      // Buat JWT untuk Google OAuth
+      // Buat JWT
       const token = await jwt.sign(
         {
           iss: GOOGLE_CLIENT_EMAIL,
@@ -32,34 +31,35 @@ export default {
         { algorithm: 'RS256' }
       );
 
-      // Ambil access_token dari Google
+      // Ambil access_token
       const resToken = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${token}`
       });
+
       const tokenJson = await resToken.json();
       const accessToken = tokenJson.access_token;
 
       if (!accessToken) {
-        return new Response('INVALID', { status: 401 });
+        return new Response('INVALID', { status: 200 });
       }
 
-      // Verifikasi purchase token ke Google Play API
+      // Verifikasi purchase token
       const verifyRes = await fetch(
         `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${PACKAGE_NAME}/purchases/products/${productId}/tokens/${purchaseToken}`,
-        {
-          headers: { Authorization: `Bearer ${accessToken}` }
-        }
+        { headers: { Authorization: `Bearer ${accessToken}` } }
       );
 
-      if (verifyRes.status === 200) {
+      const verifyData = await verifyRes.json();
+      if (verifyRes.status === 200 && verifyData.purchaseState === 0) {
         return new Response('VALID', { status: 200 });
       } else {
-        return new Response('INVALID', { status: 400 });
+        return new Response('INVALID', { status: 200 });
       }
     } catch (err) {
-      return new Response('INVALID', { status: 500 });
+      console.error('Verifikasi gagal:', err);
+      return new Response('INVALID', { status: 200 });
     }
   }
 };
