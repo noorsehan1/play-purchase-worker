@@ -7,7 +7,7 @@ export default {
         // 🔹 Ganti dengan package name aplikasi kamu
         const packageName = "com.chatmoz.app";
 
-        // 🔑 Ambil access token dari Google
+        // 🔑 Ambil access token dari Google Service Account
         const accessToken = await getGoogleAccessToken(env);
 
         // 🔎 Call Google Play Developer API
@@ -18,13 +18,16 @@ export default {
 
         const data = await res.json();
 
-        // ✅ Kalau purchaseState = 0 artinya pembelian valid
+        console.log("Google Play API response:", data);
+
+        // ✅ purchaseState = 0 artinya valid
         if (data.purchaseState === 0) {
           return new Response("VALID", { status: 200 });
         } else {
           return new Response("INVALID", { status: 200 });
         }
       } catch (err) {
+        console.error("Error verifying purchase:", err);
         return new Response("INVALID", { status: 500 });
       }
     }
@@ -53,9 +56,12 @@ async function getGoogleAccessToken(env) {
 
   const unsignedJwt = `${base64url(header)}.${base64url(claim)}`;
 
+  // 🔹 Replace literal \n dengan newline nyata
+  const privateKey = env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n");
+
   const key = await crypto.subtle.importKey(
     "pkcs8",
-    str2ab(env.GOOGLE_PRIVATE_KEY),
+    str2ab(privateKey),
     { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
     false,
     ["sign"]
