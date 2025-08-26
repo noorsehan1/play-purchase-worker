@@ -3,27 +3,27 @@ export default {
     if (request.method === "POST") {
       try {
         const { productId, purchaseToken } = await request.json();
+
+        // Package name aplikasi kamu
         const packageName = "com.chatmoz.app";
 
-        // Ambil secrets dari environment
-        const GOOGLE_CLIENT_EMAIL = env.GOOGLE_CLIENT_EMAIL;
-        const GOOGLE_PRIVATE_KEY = env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n");
+        // Ambil access token dari Google Service Account
+        const accessToken = await getGoogleAccessToken(env);
 
-        // Ambil access token dari Google
-        const accessToken = await getGoogleAccessToken(GOOGLE_CLIENT_EMAIL, GOOGLE_PRIVATE_KEY);
-
+        // Panggil Google Play Developer API
         const apiUrl = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/products/${productId}/tokens/${purchaseToken}`;
         const res = await fetch(apiUrl, {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
+
         const data = await res.json();
 
+        // Jika purchaseState = 0, artinya pembelian valid
         if (data.purchaseState === 0) {
           return new Response("VALID", { status: 200 });
         } else {
           return new Response("INVALID", { status: 200 });
         }
-
       } catch (err) {
         return new Response("INVALID", { status: 500 });
       }
@@ -33,11 +33,13 @@ export default {
   },
 };
 
-async function getGoogleAccessToken(clientEmail, privateKey) {
+// Ambil Google Access Token dari Service Account
+async function getGoogleAccessToken(env) {
   const now = Math.floor(Date.now() / 1000);
+
   const header = { alg: "RS256", typ: "JWT" };
   const claim = {
-    iss: clientEmail,
+    iss: env.GOOGLE_CLIENT_EMAIL,
     scope: "https://www.googleapis.com/auth/androidpublisher",
     aud: "https://oauth2.googleapis.com/token",
     iat: now,
@@ -45,13 +47,17 @@ async function getGoogleAccessToken(clientEmail, privateKey) {
   };
 
   const base64url = (obj) =>
-    btoa(JSON.stringify(obj)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+    btoa(JSON.stringify(obj))
+      .replace(/=/g, "")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_");
 
   const unsignedJwt = `${base64url(header)}.${base64url(claim)}`;
 
+  // Import private key
   const key = await crypto.subtle.importKey(
     "pkcs8",
-    str2ab(privateKey),
+    str2ab(env.GOOGLE_PRIVATE_KEY),
     { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
     false,
     ["sign"]
@@ -63,11 +69,14 @@ async function getGoogleAccessToken(clientEmail, privateKey) {
     new TextEncoder().encode(unsignedJwt)
   );
 
-  const signedJwt = `${unsignedJwt}.${btoa(String.fromCharCode(...new Uint8Array(signature)))
+  const signedJwt = `${unsignedJwt}.${btoa(
+    String.fromCharCode(...new Uint8Array(signature))
+  )
     .replace(/=/g, "")
     .replace(/\+/g, "-")
     .replace(/\//g, "_")}`;
 
+  // Dapatkan access token dari Google
   const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -78,10 +87,13 @@ async function getGoogleAccessToken(clientEmail, privateKey) {
   return tokenData.access_token;
 }
 
+// Convert PEM private key menjadi ArrayBuffer
 function str2ab(pem) {
-  const b64 = pem.replace(/-----BEGIN PRIVATE KEY-----/, "")
+  const b64 = pem
+    .replace(/-----BEGIN PRIVATE KEY-----/, "")
     .replace(/-----END PRIVATE KEY-----/, "")
-    .replace(/\s+/g, "");
+    .replace(/\s+/g, ""); // hapus spasi dan newline
+
   const bstr = atob(b64);
   const buf = new ArrayBuffer(bstr.length);
   const view = new Uint8Array(buf);
