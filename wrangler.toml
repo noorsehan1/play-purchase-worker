@@ -1,3 +1,4 @@
 name = "play-purchase-worker"
 main = "index.js"
 compatibility_date = "2025-08-26"
+type = "javascript"
