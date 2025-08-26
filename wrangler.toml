@@ -4,7 +4,8 @@ compatibility_date = "2025-08-27"
 
 [vars]
 GOOGLE_CLIENT_EMAIL = "iap-verifier-379@onesignal-6e467.iam.gserviceaccount.com"
-GOOGLE_PRIVATE_KEY = """-----BEGIN PRIVATE KEY-----
+GOOGLE_PRIVATE_KEY = """
+-----BEGIN PRIVATE KEY-----
 MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC5Os8u0pkfqGyj
 J2fa+59PZKThJVVsag/UNlWNf1psCMLgH8DgMiZ91nYrLSc9cw6KFt2Ynaf/I/I3
 V0MU/DhCJUWuHwTiXwOlbQkcrcPVaEB4YwBNYvEUN9NBlboobsTYdWWIzUTwlnzI
@@ -31,7 +32,8 @@ So2jWK8YENk0NyNODlwmhzzXHx2Dk1vG37an51xBAoGAB/6wK0W7VfR4kZSWJHZC
 EPNs2DfBCfAhT5b3D0Kc534hMCz0vB5ZdX6N2MN5lfQuPMmqnH18fj4RYDtD61W9
 ywn399Pj9VmQEyxiCMj+Muyk+UXGbLdqkckxNSwZDOJGD8QixWZFZCe8/TGFNl4O
 i9LDNALabbBcL5oLw5fPMFc=
------END PRIVATE KEY-----\n"""
+-----END PRIVATE KEY-----
+"""
 PACKAGE_NAME = "com.chatmoz.app"
 
 [observability.logs]
