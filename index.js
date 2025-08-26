@@ -23,7 +23,7 @@ export default {
       const { productId, purchaseToken } = body;
 
       if (!productId || !purchaseToken) {
-        return new Response("Missing productId or purchaseToken", { status: 400 });
+        return new Response(JSON.stringify({ status: "ERROR", message: "Missing productId or purchaseToken" }), { status: 400 });
       }
 
       await authClient.authorize();
@@ -40,17 +40,17 @@ export default {
         token: purchaseToken,
       });
 
-      // Log debug untuk Cloudflare
+      // Debug log
       console.log("Purchase verification response:", response.data);
 
       if (response.data.purchaseState === 0) {
-        return new Response("VALID", { status: 200 });
+        return new Response(JSON.stringify({ status: "VALID", details: response.data }), { status: 200 });
       } else {
-        return new Response("INVALID", { status: 200 });
+        return new Response(JSON.stringify({ status: "INVALID", details: response.data }), { status: 200 });
       }
     } catch (err) {
       console.error("Verification error:", err);
-      return new Response("INVALID", { status: 200 });
+      return new Response(JSON.stringify({ status: "ERROR", message: err.message }), { status: 500 });
     }
   },
 };
