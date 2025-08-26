@@ -1,14 +1,14 @@
 import jwt from '@tsndr/cloudflare-worker-jwt';
 
-const GOOGLE_CLIENT_EMAIL = GOOGLE_CLIENT_EMAIL;
-const GOOGLE_PRIVATE_KEY = GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n');
-const PACKAGE_NAME = PACKAGE_NAME;
-
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     if (request.method !== 'POST') {
       return new Response('Method not allowed', { status: 405 });
     }
+
+    const GOOGLE_CLIENT_EMAIL = env.GOOGLE_CLIENT_EMAIL;
+    const GOOGLE_PRIVATE_KEY = env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n');
+    const PACKAGE_NAME = env.PACKAGE_NAME;
 
     try {
       const data = await request.json();
@@ -18,7 +18,6 @@ export default {
         return new Response('INVALID', { status: 200 });
       }
 
-      // Buat JWT
       const token = await jwt.sign(
         {
           iss: GOOGLE_CLIENT_EMAIL,
@@ -31,7 +30,6 @@ export default {
         { algorithm: 'RS256' }
       );
 
-      // Ambil access_token
       const resToken = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -40,12 +38,8 @@ export default {
 
       const tokenJson = await resToken.json();
       const accessToken = tokenJson.access_token;
+      if (!accessToken) return new Response('INVALID', { status: 200 });
 
-      if (!accessToken) {
-        return new Response('INVALID', { status: 200 });
-      }
-
-      // Verifikasi purchase token
       const verifyRes = await fetch(
         `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${PACKAGE_NAME}/purchases/products/${productId}/tokens/${purchaseToken}`,
         { headers: { Authorization: `Bearer ${accessToken}` } }
@@ -57,6 +51,7 @@ export default {
       } else {
         return new Response('INVALID', { status: 200 });
       }
+
     } catch (err) {
       console.error('Verifikasi gagal:', err);
       return new Response('INVALID', { status: 200 });
