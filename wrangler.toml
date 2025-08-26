@@ -1,6 +1,10 @@
 name = "play-purchase-worker"
 main = "index.js"
-compatibility_date = "2025-08-26"
+compatibility_date = "2025-08-26"   # jangan di masa depan
 
 [observability.logs]
 enabled = true
+
+# Secret variables akan diatur melalui Wrangler CLI:
+# wrangler secret put GOOGLE_CLIENT_EMAIL
+# wrangler secret put GOOGLE_PRIVATE_KEY
