@@ -7,7 +7,7 @@ export default {
         // 🔹 Ganti dengan package name aplikasi kamu
         const packageName = "com.chatmoz.app";
 
-        // 🔑 Ambil access token dari Google Service Account
+        // 🔑 Ambil access token dari Service Account
         const accessToken = await getGoogleAccessToken(env);
 
         // 🔎 Call Google Play Developer API
