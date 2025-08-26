@@ -1,57 +1,59 @@
-import jwt from 'jsonwebtoken';
+import { google } from "googleapis";
 
-const GOOGLE_CLIENT_EMAIL = GLOBALS.GOOGLE_CLIENT_EMAIL;
-const GOOGLE_PRIVATE_KEY = GLOBALS.GOOGLE_PRIVATE_KEY;
-const PACKAGE_NAME = GLOBALS.PACKAGE_NAME;
+const PACKAGE_NAME = "com.chatmoz.app";
+
+const clientEmail = GOOGLE_CLIENT_EMAIL; // dari wrangler.toml
+const privateKey = GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"); // ubah escape sequence
+
+async function verifyPurchase(productId, purchaseToken) {
+  try {
+    const authClient = new google.auth.JWT({
+      email: clientEmail,
+      key: privateKey,
+      scopes: ['https://www.googleapis.com/auth/androidpublisher'],
+    });
+
+    const androidPublisher = google.androidpublisher({
+      version: 'v3',
+      auth: authClient
+    });
+
+    const res = await androidPublisher.purchases.products.get({
+      packageName: PACKAGE_NAME,
+      productId: productId,
+      token: purchaseToken,
+    });
+
+    if (res.data && res.data.purchaseState === 0) { // 0 = purchased
+      return "VALID";
+    } else {
+      return "INVALID";
+    }
+  } catch (err) {
+    console.error("Verification error:", err);
+    return "INVALID";
+  }
+}
 
 export default {
   async fetch(request) {
     if (request.method !== "POST") {
-      return new Response("Request method not allowed", { status: 405 });
+      return new Response("Method not allowed", { status: 405 });
     }
 
     try {
       const body = await request.json();
-      const { productId, purchaseToken } = body;
+      const productId = body.productId;
+      const purchaseToken = body.purchaseToken;
 
-      // 1. Buat JWT untuk access_token
-      const now = Math.floor(Date.now() / 1000);
-      const payload = {
-        iss: GOOGLE_CLIENT_EMAIL,
-        scope: "https://www.googleapis.com/auth/androidpublisher",
-        aud: "https://oauth2.googleapis.com/token",
-        exp: now + 3600,
-        iat: now
-      };
-
-      const token = jwt.sign(payload, GOOGLE_PRIVATE_KEY, { algorithm: "RS256" });
-
-      // 2. Request access token dari Google
-      const accessTokenRes = await fetch("https://oauth2.googleapis.com/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${token}`
-      });
-
-      const accessTokenData = await accessTokenRes.json();
-      const accessToken = accessTokenData.access_token;
-
-      // 3. Request verifikasi pembelian
-      const verifyUrl = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${PACKAGE_NAME}/purchases/products/${productId}/tokens/${purchaseToken}`;
-      const verifyRes = await fetch(verifyUrl, {
-        headers: { "Authorization": `Bearer ${accessToken}` }
-      });
-
-      const verifyData = await verifyRes.json();
-
-      if (verifyData && verifyData.purchaseState === 0) {
-        return new Response("VALID");
-      } else {
-        return new Response("INVALID");
+      if (!productId || !purchaseToken) {
+        return new Response("Missing parameters", { status: 400 });
       }
 
+      const result = await verifyPurchase(productId, purchaseToken);
+      return new Response(result, { status: 200 });
     } catch (err) {
-      return new Response("ERROR: " + err.message, { status: 500 });
+      return new Response("Invalid request", { status: 400 });
     }
   }
-}
+};
