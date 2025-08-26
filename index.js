@@ -1,40 +1,14 @@
-import { google } from "googleapis";
+import { google } from 'googleapis';
 
-const PACKAGE_NAME = "com.chatmoz.app";
+const PACKAGE_NAME = "com.chatmoz.app"; // sesuaikan dengan package aplikasi
 
-const clientEmail = GOOGLE_CLIENT_EMAIL; // dari wrangler.toml
-const privateKey = GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"); // ubah escape sequence
+// Variabel environment dari wrangler.toml
+const CLIENT_EMAIL = GOOGLE_CLIENT_EMAIL;
+const PRIVATE_KEY = GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'); // replace newline
 
-async function verifyPurchase(productId, purchaseToken) {
-  try {
-    const authClient = new google.auth.JWT({
-      email: clientEmail,
-      key: privateKey,
-      scopes: ['https://www.googleapis.com/auth/androidpublisher'],
-    });
-
-    const androidPublisher = google.androidpublisher({
-      version: 'v3',
-      auth: authClient
-    });
-
-    const res = await androidPublisher.purchases.products.get({
-      packageName: PACKAGE_NAME,
-      productId: productId,
-      token: purchaseToken,
-    });
-
-    if (res.data && res.data.purchaseState === 0) { // 0 = purchased
-      return "VALID";
-    } else {
-      return "INVALID";
-    }
-  } catch (err) {
-    console.error("Verification error:", err);
-    return "INVALID";
-  }
-}
-
+/**
+ * Handler Cloudflare Worker
+ */
 export default {
   async fetch(request) {
     if (request.method !== "POST") {
@@ -43,17 +17,40 @@ export default {
 
     try {
       const body = await request.json();
-      const productId = body.productId;
-      const purchaseToken = body.purchaseToken;
+      const { productId, purchaseToken } = body;
 
       if (!productId || !purchaseToken) {
-        return new Response("Missing parameters", { status: 400 });
+        return new Response("INVALID", { status: 400 });
       }
 
-      const result = await verifyPurchase(productId, purchaseToken);
-      return new Response(result, { status: 200 });
+      // Auth JWT client
+      const auth = new google.auth.JWT({
+        email: CLIENT_EMAIL,
+        key: PRIVATE_KEY,
+        scopes: ['https://www.googleapis.com/auth/androidpublisher'],
+      });
+
+      const androidpublisher = google.androidpublisher({
+        version: 'v3',
+        auth,
+      });
+
+      // Verifikasi token
+      const res = await androidpublisher.purchases.products.get({
+        packageName: PACKAGE_NAME,
+        productId,
+        token: purchaseToken,
+      });
+
+      // Jika purchase valid dan belum consumed
+      if (res.data && res.data.purchaseState === 0) {
+        return new Response("VALID", { status: 200 });
+      } else {
+        return new Response("INVALID", { status: 200 });
+      }
+
     } catch (err) {
-      return new Response("Invalid request", { status: 400 });
+      return new Response("INVALID", { status: 500 });
     }
   }
 };
