@@ -1,78 +1,91 @@
-import * as jose from "jose";
-
 export default {
   async fetch(request, env) {
-    if (request.method !== "POST") {
-      return new Response("Only POST allowed", { status: 405 });
-    }
+    if (request.method === "POST") {
+      try {
+        const { productId, purchaseToken } = await request.json();
 
-    try {
-      const body = await request.json();
-      const { productId, purchaseToken } = body;
+        // 🔹 Pakai package name kamu
+        const packageName = "com.chatmoz.app";
 
-      if (!productId || !purchaseToken) {
-        return new Response("Missing fields", { status: 400 });
-      }
+        // 🔑 Ambil access token dari Google
+        const accessToken = await getGoogleAccessToken(env);
 
-      // 🔑 Ambil service account dari Secrets
-      const serviceAccount = JSON.parse(env.GOOGLE_SERVICE_ACCOUNT);
+        // 🔎 Call Google Play Developer API
+        const apiUrl = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/products/${productId}/tokens/${purchaseToken}`;
+        const res = await fetch(apiUrl, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        const data = await res.json();
 
-      // 1️⃣ Buat JWT untuk OAuth2
-      const iat = Math.floor(Date.now() / 1000);
-      const exp = iat + 3600;
-      const payload = {
-        iss: serviceAccount.client_email,
-        scope: "https://www.googleapis.com/auth/androidpublisher",
-        aud: "https://oauth2.googleapis.com/token",
-        exp,
-        iat
-      };
-
-      const privateKey = await jose.importPKCS8(serviceAccount.private_key, "RS256");
-      const jwt = await new jose.SignJWT(payload)
-        .setProtectedHeader({ alg: "RS256" })
-        .setIssuedAt(iat)
-        .setExpirationTime(exp)
-        .sign(privateKey);
-
-      // 2️⃣ Tukar JWT jadi Access Token
-      const tokenResp = await fetch("https://oauth2.googleapis.com/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-          assertion: jwt
-        })
-      });
-
-      const tokenData = await tokenResp.json();
-      const accessToken = tokenData.access_token;
-
-      if (!accessToken) {
-        return new Response("ERROR: Cannot get access token", { status: 500 });
-      }
-
-      // 3️⃣ Verifikasi pembelian ke Google API
-      const packageName = "com.chatmoz.app"; // ⚠️ pastikan sama persis dengan Play Console
-      const url = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/products/${productId}/tokens/${purchaseToken}`;
-
-      const resp = await fetch(url, {
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Accept": "application/json"
+        // ✅ Kalau purchaseState = 0 artinya pembelian valid
+        if (data.purchaseState === 0) {
+          return new Response("VALID", { status: 200 });
+        } else {
+          return new Response("INVALID", { status: 200 });
         }
-      });
-
-      const data = await resp.json();
-
-      // ✅ purchaseState = 0 artinya sukses
-      if (data.purchaseState === 0) {
-        return new Response("VALID", { status: 200 });
-      } else {
-        return new Response("INVALID", { status: 400 });
+      } catch (err) {
+        return new Response("INVALID", { status: 500 });
       }
-    } catch (err) {
-      return new Response("ERROR: " + err.message, { status: 500 });
     }
-  }
+
+    return new Response("Not Found", { status: 404 });
+  },
 };
+
+// === Ambil Google Access Token dari Service Account ===
+async function getGoogleAccessToken(env) {
+  const now = Math.floor(Date.now() / 1000);
+  const header = { alg: "RS256", typ: "JWT" };
+  const claim = {
+    iss: env.GOOGLE_CLIENT_EMAIL,
+    scope: "https://www.googleapis.com/auth/androidpublisher",
+    aud: "https://oauth2.googleapis.com/token",
+    iat: now,
+    exp: now + 3600,
+  };
+
+  const base64url = (obj) =>
+    btoa(JSON.stringify(obj))
+      .replace(/=/g, "")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_");
+
+  const unsignedJwt = `${base64url(header)}.${base64url(claim)}`;
+
+  const key = await crypto.subtle.importKey(
+    "pkcs8",
+    str2ab(env.GOOGLE_PRIVATE_KEY),
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    key,
+    new TextEncoder().encode(unsignedJwt)
+  );
+
+  const signedJwt = `${unsignedJwt}.${btoa(
+    String.fromCharCode(...new Uint8Array(signature))
+  )
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")}`;
+
+  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${signedJwt}`,
+  });
+  const tokenData = await tokenRes.json();
+
+  return tokenData.access_token;
+}
+
+function str2ab(str) {
+  const bstr = atob(str.replace(/-----.*-----/g, "").replace(/\n/g, ""));
+  const buf = new ArrayBuffer(bstr.length);
+  const view = new Uint8Array(buf);
+  for (let i = 0; i < bstr.length; i++) view[i] = bstr.charCodeAt(i);
+  return buf;
+}
