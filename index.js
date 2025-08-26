@@ -4,13 +4,16 @@ export default {
       try {
         const { productId, purchaseToken } = await request.json();
 
-        // Package name aplikasi kamu
-        const packageName = "com.chatmoz.app";
+        if (!productId || !purchaseToken) {
+          return new Response(
+            JSON.stringify({ error: "Missing productId or purchaseToken" }),
+            { status: 400 }
+          );
+        }
 
-        // Ambil access token dari Google Service Account
+        const packageName = "com.chatmoz.app"; // ganti sesuai package app kamu
         const accessToken = await getGoogleAccessToken(env);
 
-        // Panggil Google Play Developer API
         const apiUrl = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/products/${productId}/tokens/${purchaseToken}`;
         const res = await fetch(apiUrl, {
           headers: { Authorization: `Bearer ${accessToken}` },
@@ -18,14 +21,38 @@ export default {
 
         const data = await res.json();
 
-        // Jika purchaseState = 0, artinya pembelian valid
+        // Logging untuk debugging
+        console.log("Google API response:", data);
+
+        if (data.error) {
+          return new Response(
+            JSON.stringify({ valid: false, reason: data.error }),
+            { status: 200 }
+          );
+        }
+
+        // purchaseState = 0 artinya valid
         if (data.purchaseState === 0) {
-          return new Response("VALID", { status: 200 });
+          return new Response(
+            JSON.stringify({ valid: true, purchaseState: data.purchaseState }),
+            { status: 200 }
+          );
         } else {
-          return new Response("INVALID", { status: 200 });
+          return new Response(
+            JSON.stringify({
+              valid: false,
+              purchaseState: data.purchaseState,
+              message: data.developerPayload || "Purchase not valid",
+            }),
+            { status: 200 }
+          );
         }
       } catch (err) {
-        return new Response("INVALID", { status: 500 });
+        console.error("Worker error:", err);
+        return new Response(
+          JSON.stringify({ valid: false, error: err.toString() }),
+          { status: 500 }
+        );
       }
     }
 
@@ -36,7 +63,6 @@ export default {
 // Ambil Google Access Token dari Service Account
 async function getGoogleAccessToken(env) {
   const now = Math.floor(Date.now() / 1000);
-
   const header = { alg: "RS256", typ: "JWT" };
   const claim = {
     iss: env.GOOGLE_CLIENT_EMAIL,
@@ -54,7 +80,6 @@ async function getGoogleAccessToken(env) {
 
   const unsignedJwt = `${base64url(header)}.${base64url(claim)}`;
 
-  // Import private key
   const key = await crypto.subtle.importKey(
     "pkcs8",
     str2ab(env.GOOGLE_PRIVATE_KEY),
@@ -76,7 +101,6 @@ async function getGoogleAccessToken(env) {
     .replace(/\+/g, "-")
     .replace(/\//g, "_")}`;
 
-  // Dapatkan access token dari Google
   const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -87,12 +111,12 @@ async function getGoogleAccessToken(env) {
   return tokenData.access_token;
 }
 
-// Convert PEM private key menjadi ArrayBuffer
+// Convert PEM Private Key -> ArrayBuffer
 function str2ab(pem) {
   const b64 = pem
     .replace(/-----BEGIN PRIVATE KEY-----/, "")
     .replace(/-----END PRIVATE KEY-----/, "")
-    .replace(/\s+/g, ""); // hapus spasi dan newline
+    .replace(/\s+/g, "");
 
   const bstr = atob(b64);
   const buf = new ArrayBuffer(bstr.length);
