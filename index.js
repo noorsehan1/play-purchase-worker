@@ -4,7 +4,7 @@ export default {
       try {
         const { productId, purchaseToken } = await request.json();
 
-        // 🔹 Pakai package name kamu
+        // 🔹 Ganti dengan package name aplikasi kamu
         const packageName = "com.chatmoz.app";
 
         // 🔑 Ambil access token dari Google
@@ -15,6 +15,7 @@ export default {
         const res = await fetch(apiUrl, {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
+
         const data = await res.json();
 
         // ✅ Kalau purchaseState = 0 artinya pembelian valid
@@ -59,6 +60,7 @@ async function getGoogleAccessToken(env) {
     false,
     ["sign"]
   );
+
   const signature = await crypto.subtle.sign(
     "RSASSA-PKCS1-v1_5",
     key,
@@ -77,13 +79,19 @@ async function getGoogleAccessToken(env) {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${signedJwt}`,
   });
-  const tokenData = await tokenRes.json();
 
+  const tokenData = await tokenRes.json();
   return tokenData.access_token;
 }
 
-function str2ab(str) {
-  const bstr = atob(str.replace(/-----.*-----/g, "").replace(/\n/g, ""));
+// === Convert PEM Private Key -> ArrayBuffer ===
+function str2ab(pem) {
+  const b64 = pem
+    .replace(/-----BEGIN PRIVATE KEY-----/, "")
+    .replace(/-----END PRIVATE KEY-----/, "")
+    .replace(/\s+/g, ""); // hapus newline & spasi
+
+  const bstr = atob(b64);
   const buf = new ArrayBuffer(bstr.length);
   const view = new Uint8Array(buf);
   for (let i = 0; i < bstr.length; i++) view[i] = bstr.charCodeAt(i);
