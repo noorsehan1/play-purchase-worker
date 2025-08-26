@@ -1,6 +1,6 @@
 import { google } from "googleapis";
 
-// Ambil secrets dari environment variables
+// Ambil kredensial dari environment variables
 const clientEmail = GOOGLE_CLIENT_EMAIL;
 const privateKey = GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"); // Pastikan newline benar
 
@@ -15,7 +15,8 @@ const authClient = new google.auth.JWT({
 export default {
   async fetch(request, env) {
     if (request.method !== "POST") {
-      return new Response("Request method not allowed", { status: 405 });
+      console.log("Request method not allowed:", request.method);
+      return new Response("Method Not Allowed", { status: 405 });
     }
 
     try {
@@ -23,7 +24,8 @@ export default {
       const { productId, purchaseToken } = body;
 
       if (!productId || !purchaseToken) {
-        return new Response(JSON.stringify({ status: "ERROR", message: "Missing productId or purchaseToken" }), { status: 400 });
+        console.log("Missing productId or purchaseToken");
+        return new Response("INVALID", { status: 400 });
       }
 
       await authClient.authorize();
@@ -33,24 +35,23 @@ export default {
         auth: authClient,
       });
 
-      const packageName = "com.chatmoz.app"; // <-- Sudah diganti
+      const packageName = "com.chatmoz.app"; // Ganti dengan nama paket aplikasi Anda
       const response = await androidpublisher.purchases.products.get({
         packageName,
         productId,
         token: purchaseToken,
       });
 
-      // Debug log
       console.log("Purchase verification response:", response.data);
 
       if (response.data.purchaseState === 0) {
-        return new Response(JSON.stringify({ status: "VALID", details: response.data }), { status: 200 });
+        return new Response("VALID", { status: 200 });
       } else {
-        return new Response(JSON.stringify({ status: "INVALID", details: response.data }), { status: 200 });
+        return new Response("INVALID", { status: 400 });
       }
     } catch (err) {
       console.error("Verification error:", err);
-      return new Response(JSON.stringify({ status: "ERROR", message: err.message }), { status: 500 });
+      return new Response("INVALID", { status: 500 });
     }
   },
 };
