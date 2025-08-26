@@ -1,57 +1,52 @@
 export default {
   async fetch(request, env) {
-    console.log("Incoming request:", request.url, "Method:", request.method);
-
-    if (request.method === "POST") {
-      try {
-        const { productId, purchaseToken } = await request.json();
-        console.log("Purchase data received:", { productId, purchaseToken });
-
-        // 🔹 Ganti dengan package name aplikasi kamu
-        const packageName = "com.chatmoz.app";
-
-        // Ambil Google Access Token
-        const accessToken = await getGoogleAccessToken(env);
-        console.log("Google access token obtained");
-
-        // Panggil Google Play Developer API
-        const apiUrl = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/products/${productId}/tokens/${purchaseToken}`;
-        const res = await fetch(apiUrl, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-
-        const data = await res.json();
-        console.log("Google API response:", data);
-
-        // Tambahkan field custom 'isValid' berdasarkan purchaseState
-        const responsePayload = {
-          isValid: data.purchaseState === 0,
-          purchaseData: data,
-        };
-
-        console.log("Response payload:", responsePayload);
-        return new Response(JSON.stringify(responsePayload), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      } catch (err) {
-        console.error("Error verifying purchase:", err);
-        return new Response(JSON.stringify({ isValid: false, error: err.toString() }), {
-          status: 500,
-          headers: { "Content-Type": "application/json" },
-        });
+    try {
+      if (request.method !== "POST") {
+        console.log("Method not allowed:", request.method);
+        return new Response("Method Not Allowed", { status: 405 });
       }
-    }
 
-    console.log("Request method not allowed");
-    return new Response(JSON.stringify({ error: "Method Not Allowed" }), {
-      status: 404,
-      headers: { "Content-Type": "application/json" },
-    });
+      const body = await request.json();
+      const { productId, purchaseToken } = body;
+
+      console.log("Incoming request:", body);
+
+      if (!productId || !purchaseToken) {
+        console.log("Missing productId or purchaseToken");
+        return new Response("INVALID", { status: 400 });
+      }
+
+      // Ganti dengan package name aplikasi kamu
+      const packageName = "com.chatmoz.app"; 
+
+      const accessToken = await getGoogleAccessToken(env);
+      console.log("Access token retrieved:", accessToken ? "YES" : "NO");
+
+      const apiUrl = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/products/${productId}/tokens/${purchaseToken}`;
+      console.log("Calling Google API URL:", apiUrl);
+
+      const res = await fetch(apiUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      const data = await res.json();
+      console.log("Google API response:", JSON.stringify(data));
+
+      if (data.purchaseState === 0) {
+        console.log("Purchase valid");
+        return new Response("VALID", { status: 200 });
+      } else {
+        console.log("Purchase invalid");
+        return new Response("INVALID", { status: 200 });
+      }
+    } catch (err) {
+      console.log("Error in Worker:", err);
+      return new Response("INVALID", { status: 500 });
+    }
   },
 };
 
-// Ambil Google Access Token dari Service Account
+// ================= Helper: Ambil Google Access Token =================
 async function getGoogleAccessToken(env) {
   const now = Math.floor(Date.now() / 1000);
   const header = { alg: "RS256", typ: "JWT" };
@@ -99,12 +94,11 @@ async function getGoogleAccessToken(env) {
   });
 
   const tokenData = await tokenRes.json();
-  console.log("Access token response:", tokenData);
-
+  console.log("Access token response:", JSON.stringify(tokenData));
   return tokenData.access_token;
 }
 
-// Convert PEM Private Key -> ArrayBuffer
+// ================= Helper: Convert PEM -> ArrayBuffer =================
 function str2ab(pem) {
   const b64 = pem
     .replace(/-----BEGIN PRIVATE KEY-----/, "")
