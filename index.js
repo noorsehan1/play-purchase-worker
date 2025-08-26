@@ -1,62 +1,53 @@
 export default {
   async fetch(request, env) {
+    console.log("Incoming request:", request.url, "Method:", request.method);
+
     if (request.method === "POST") {
       try {
         const { productId, purchaseToken } = await request.json();
+        console.log("Purchase data received:", { productId, purchaseToken });
 
-        if (!productId || !purchaseToken) {
-          return new Response(
-            JSON.stringify({ error: "Missing productId or purchaseToken" }),
-            { status: 400 }
-          );
-        }
+        // 🔹 Ganti dengan package name aplikasi kamu
+        const packageName = "com.chatmoz.app";
 
-        const packageName = "com.chatmoz.app"; // ganti sesuai package app kamu
+        // Ambil Google Access Token
         const accessToken = await getGoogleAccessToken(env);
+        console.log("Google access token obtained");
 
+        // Panggil Google Play Developer API
         const apiUrl = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/products/${productId}/tokens/${purchaseToken}`;
         const res = await fetch(apiUrl, {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
 
         const data = await res.json();
-
-        // Logging untuk debugging
         console.log("Google API response:", data);
 
-        if (data.error) {
-          return new Response(
-            JSON.stringify({ valid: false, reason: data.error }),
-            { status: 200 }
-          );
-        }
+        // Tambahkan field custom 'isValid' berdasarkan purchaseState
+        const responsePayload = {
+          isValid: data.purchaseState === 0,
+          purchaseData: data,
+        };
 
-        // purchaseState = 0 artinya valid
-        if (data.purchaseState === 0) {
-          return new Response(
-            JSON.stringify({ valid: true, purchaseState: data.purchaseState }),
-            { status: 200 }
-          );
-        } else {
-          return new Response(
-            JSON.stringify({
-              valid: false,
-              purchaseState: data.purchaseState,
-              message: data.developerPayload || "Purchase not valid",
-            }),
-            { status: 200 }
-          );
-        }
+        console.log("Response payload:", responsePayload);
+        return new Response(JSON.stringify(responsePayload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       } catch (err) {
-        console.error("Worker error:", err);
-        return new Response(
-          JSON.stringify({ valid: false, error: err.toString() }),
-          { status: 500 }
-        );
+        console.error("Error verifying purchase:", err);
+        return new Response(JSON.stringify({ isValid: false, error: err.toString() }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        });
       }
     }
 
-    return new Response("Not Found", { status: 404 });
+    console.log("Request method not allowed");
+    return new Response(JSON.stringify({ error: "Method Not Allowed" }), {
+      status: 404,
+      headers: { "Content-Type": "application/json" },
+    });
   },
 };
 
@@ -108,6 +99,8 @@ async function getGoogleAccessToken(env) {
   });
 
   const tokenData = await tokenRes.json();
+  console.log("Access token response:", tokenData);
+
   return tokenData.access_token;
 }
 
