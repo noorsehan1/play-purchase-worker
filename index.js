@@ -1,79 +1,64 @@
-const PACKAGE_NAME = "com.chatmoz.app";
-
-function base64urlEncode(str) {
-  return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-async function createJWT(payload, privateKey) {
-  const encoder = new TextEncoder();
-  const header = { alg: 'RS256', typ: 'JWT' };
-  const encodedHeader = base64urlEncode(JSON.stringify(header));
-  const encodedPayload = base64urlEncode(JSON.stringify(payload));
-  const data = encoder.encode(`${encodedHeader}.${encodedPayload}`);
-
-  const keyData = privateKey.replace('-----BEGIN PRIVATE KEY-----', '')
-                            .replace('-----END PRIVATE KEY-----', '')
-                            .replace(/\n/g, '');
-  const keyBuffer = Uint8Array.from(atob(keyData), c => c.charCodeAt(0));
-
-  const cryptoKey = await crypto.subtle.importKey(
-    'pkcs8',
-    keyBuffer.buffer,
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-
-  const signature = new Uint8Array(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', cryptoKey, data));
-  return `${encodedHeader}.${encodedPayload}.${base64urlEncode(String.fromCharCode(...signature))}`;
-}
+import { SignJWT } from "jose";
 
 export default {
-  async fetch(request, env) {
-    if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 });
+  async fetch(req, env) {
+    // 1. Ambil secrets dari environment
+    const clientEmail = env.GOOGLE_CLIENT_EMAIL;
+    let privateKey = env.GOOGLE_PRIVATE_KEY;
 
-    try {
-      const { productId, purchaseToken } = await request.json();
-      if (!productId || !purchaseToken) return new Response('INVALID', { status: 200 });
+    // Google private key biasanya ada karakter escaped "\n" → ubah ke newline
+    privateKey = privateKey.replace(/\\n/g, "\n");
 
-      const GOOGLE_CLIENT_EMAIL = env.GOOGLE_CLIENT_EMAIL;
-      const GOOGLE_PRIVATE_KEY = env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n');
+    // 2. Claim JWT sesuai service account flow
+    const now = Math.floor(Date.now() / 1000);
+    const payload = {
+      iss: clientEmail,
+      scope: "https://www.googleapis.com/auth/androidpublisher", // contoh scope Play Developer API
+      aud: env.GOOGLE_TOKEN_URI,
+      iat: now,
+      exp: now + 3600, // 1 jam
+    };
 
-      const payload = {
-        iss: GOOGLE_CLIENT_EMAIL,
-        scope: 'https://www.googleapis.com/auth/androidpublisher',
-        aud: 'https://oauth2.googleapis.com/token',
-        exp: Math.floor(Date.now() / 1000) + 3600,
-        iat: Math.floor(Date.now() / 1000)
-      };
+    // 3. Sign JWT pakai jose
+    const jwt = await new SignJWT(payload)
+      .setProtectedHeader({ alg: "RS256", typ: "JWT" })
+      .sign(await crypto.subtle.importKey(
+        "pkcs8",
+        str2ab(privateKey),
+        { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+        false,
+        ["sign"]
+      ));
 
-      const jwt = await createJWT(payload, GOOGLE_PRIVATE_KEY);
+    // 4. Tukar JWT ke access_token
+    const resp = await fetch(env.GOOGLE_TOKEN_URI, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        assertion: jwt,
+      }),
+    });
 
-      const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`
-      });
+    const data = await resp.json();
 
-      const tokenJson = await tokenRes.json();
-      const accessToken = tokenJson.access_token;
-      if (!accessToken) return new Response('INVALID', { status: 200 });
-
-      const verifyRes = await fetch(
-        `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${PACKAGE_NAME}/purchases/products/${productId}/tokens/${purchaseToken}`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
-
-      const verifyData = await verifyRes.json();
-      if (verifyRes.status === 200 && verifyData.purchaseState === 0) {
-        return new Response('VALID', { status: 200 });
-      } else {
-        return new Response('INVALID', { status: 200 });
-      }
-
-    } catch (err) {
-      console.error('Verifikasi gagal:', err);
-      return new Response('INVALID', { status: 200 });
-    }
-  }
+    return new Response(JSON.stringify(data, null, 2), {
+      headers: { "Content-Type": "application/json" },
+    });
+  },
 };
+
+// Helper: convert string → ArrayBuffer
+function str2ab(pem) {
+  const b64 = pem
+    .replace(/-----BEGIN PRIVATE KEY-----/, "")
+    .replace(/-----END PRIVATE KEY-----/, "")
+    .replace(/\s+/g, "");
+  const raw = atob(b64);
+  const buf = new ArrayBuffer(raw.length);
+  const view = new Uint8Array(buf);
+  for (let i = 0; i < raw.length; i++) {
+    view[i] = raw.charCodeAt(i);
+  }
+  return buf;
+}
