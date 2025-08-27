@@ -1,5 +1,16 @@
 export default {
   async fetch(request, env) {
+    const corsHeaders = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    };
+
+    // Tangani preflight OPTIONS
+    if (request.method === "OPTIONS") {
+      return new Response(null, { headers: corsHeaders });
+    }
+
     const url = new URL(request.url);
     const packageName = url.searchParams.get("packageName");
     const productId = url.searchParams.get("productId");
@@ -8,7 +19,7 @@ export default {
     if (!packageName || !productId || !purchaseToken) {
       return new Response(
         JSON.stringify({ error: "Harus kirim ?packageName=&productId=&purchaseToken=" }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -37,18 +48,14 @@ export default {
       iat: Math.floor(Date.now() / 1000),
     };
 
-    // ===== KONVERSI KEY =====
-    // disini kunci dari Cloudflare punya '\n' literal → kita ubah jadi newline asli
     const keyPem = env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n");
 
-    // ambil bagian base64 di tengah
     const keyLines = keyPem
       .replace("-----BEGIN PRIVATE KEY-----", "")
       .replace("-----END PRIVATE KEY-----", "")
       .replace(/\n/g, "");
     const keyBytes = Uint8Array.from(atob(keyLines), c => c.charCodeAt(0));
 
-    // buat CryptoKey
     const cryptoKey = await crypto.subtle.importKey(
       "pkcs8",
       keyBytes.buffer,
@@ -76,7 +83,7 @@ export default {
     const tokenData = await tokenRes.json();
     if (!tokenData.access_token) {
       return new Response(JSON.stringify({ error: "Gagal ambil access_token", detail: tokenData }, null, 2), {
-        headers: { "Content-Type": "application/json" },
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 500,
       });
     }
@@ -90,7 +97,7 @@ export default {
     const purchaseData = await verifyRes.json();
 
     return new Response(JSON.stringify(purchaseData, null, 2), {
-      headers: { "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   },
 };
