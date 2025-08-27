@@ -6,6 +6,7 @@ export default {
       "Access-Control-Allow-Headers": "Content-Type",
     };
 
+    // Handle CORS preflight
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: corsHeaders });
     }
@@ -25,13 +26,15 @@ export default {
     }
 
     if (!packageName || !productId || !purchaseToken) {
-      return new Response(
-        JSON.stringify({ error: "Harus kirim packageName, productId, dan purchaseToken di body JSON" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({
+        error: "Harus kirim packageName, productId, dan purchaseToken di body JSON"
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
     }
 
-    // ===== helper & JWT =====
+    // ======== JWT Signing Setup =========
     function base64url(source) {
       let encoded = btoa(String.fromCharCode(...new Uint8Array(source)));
       return encoded.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -68,6 +71,7 @@ export default {
     const encSignature = base64url(signature);
     const jwt = `${encHeader}.${encClaim}.${encSignature}`;
 
+    // ======== Get access token from Google ========
     const tokenRes = await fetch(env.GOOGLE_TOKEN_URI, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -81,30 +85,28 @@ export default {
         error: "Gagal ambil access_token",
         jwt,
         detail: tokenData
-      }, null, 2), {
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 500,
       });
     }
 
+    // ======== Verify purchase ========
     const verifyUrl = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/products/${productId}/tokens/${purchaseToken}`;
 
     const verifyRes = await fetch(verifyUrl, {
-      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+      headers: {
+        Authorization: `Bearer ${tokenData.access_token}`
+      }
     });
 
     const purchaseData = await verifyRes.json();
 
-    // Tambahkan debug info
-    const debug = {
-      jwt,
-      access_token: tokenData.access_token,
-      verifyUrl,
-      purchaseData
-    };
-
-    return new Response(JSON.stringify(debug, null, 2), {
+    // Final response
+    return new Response(JSON.stringify({
+      purchaseData: purchaseData
+    }, null, 2), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  },
+  }
 };
