@@ -12,7 +12,7 @@ export default {
       );
     }
 
-    // ===== helper =====
+    // helper
     function base64url(source) {
       let encoded = btoa(String.fromCharCode(...new Uint8Array(source)));
       return encoded.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -27,9 +27,8 @@ export default {
       return buf;
     }
 
-    // ===== JWT HEADER =====
+    // ===== JWT HEADER & CLAIM =====
     const jwtHeader = { alg: "RS256", typ: "JWT" };
-
     const jwtClaimSet = {
       iss: env.GOOGLE_CLIENT_EMAIL,
       scope: "https://www.googleapis.com/auth/androidpublisher",
@@ -38,28 +37,36 @@ export default {
       iat: Math.floor(Date.now() / 1000),
     };
 
-    // buat kunci
-    const encoder = new TextEncoder();
-    const keyData = env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n");
+    // ===== KONVERSI KEY =====
+    // disini kunci dari Cloudflare punya '\n' literal → kita ubah jadi newline asli
+    const keyPem = env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n");
+
+    // ambil bagian base64 di tengah
+    const keyLines = keyPem
+      .replace("-----BEGIN PRIVATE KEY-----", "")
+      .replace("-----END PRIVATE KEY-----", "")
+      .replace(/\n/g, "");
+    const keyBytes = Uint8Array.from(atob(keyLines), c => c.charCodeAt(0));
+
+    // buat CryptoKey
     const cryptoKey = await crypto.subtle.importKey(
       "pkcs8",
-      str2ab(keyData),
+      keyBytes.buffer,
       { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
       false,
       ["sign"]
     );
 
-    // encode header & claim
+    const encoder = new TextEncoder();
     const encHeader = base64url(encoder.encode(JSON.stringify(jwtHeader)));
     const encClaim = base64url(encoder.encode(JSON.stringify(jwtClaimSet)));
     const signatureInput = encoder.encode(`${encHeader}.${encClaim}`);
 
-    // sign JWT
     const signature = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", cryptoKey, signatureInput);
     const encSignature = base64url(signature);
     const jwt = `${encHeader}.${encClaim}.${encSignature}`;
 
-    // exchange JWT → access_token
+    // ===== EXCHANGE JWT → ACCESS TOKEN =====
     const tokenRes = await fetch(env.GOOGLE_TOKEN_URI, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -74,7 +81,7 @@ export default {
       });
     }
 
-    // verify purchase
+    // ===== VERIFY PURCHASE =====
     const verifyUrl = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/products/${productId}/tokens/${purchaseToken}`;
     const verifyRes = await fetch(verifyUrl, {
       headers: { Authorization: `Bearer ${tokenData.access_token}` },
