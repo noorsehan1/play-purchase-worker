@@ -12,22 +12,7 @@ export default {
       );
     }
 
-    // ===== JWT HEADER =====
-    const jwtHeader = {
-      alg: "RS256",
-      typ: "JWT",
-    };
-
-    // ===== JWT CLAIM SET =====
-    const jwtClaimSet = {
-      iss: env.GOOGLE_CLIENT_EMAIL,
-      scope: "https://www.googleapis.com/auth/androidpublisher",
-      aud: env.GOOGLE_TOKEN_URI,
-      exp: Math.floor(Date.now() / 1000) + 3600, // 1 jam
-      iat: Math.floor(Date.now() / 1000),
-    };
-
-    // helper base64
+    // ===== helper =====
     function base64url(source) {
       let encoded = btoa(String.fromCharCode(...new Uint8Array(source)));
       return encoded.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -41,6 +26,17 @@ export default {
       }
       return buf;
     }
+
+    // ===== JWT HEADER =====
+    const jwtHeader = { alg: "RS256", typ: "JWT" };
+
+    const jwtClaimSet = {
+      iss: env.GOOGLE_CLIENT_EMAIL,
+      scope: "https://www.googleapis.com/auth/androidpublisher",
+      aud: env.GOOGLE_TOKEN_URI,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      iat: Math.floor(Date.now() / 1000),
+    };
 
     // buat kunci
     const encoder = new TextEncoder();
@@ -63,7 +59,7 @@ export default {
     const encSignature = base64url(signature);
     const jwt = `${encHeader}.${encClaim}.${encSignature}`;
 
-    // ===== EXCHANGE JWT → ACCESS TOKEN =====
+    // exchange JWT → access_token
     const tokenRes = await fetch(env.GOOGLE_TOKEN_URI, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -78,7 +74,7 @@ export default {
       });
     }
 
-    // ===== VERIFY PURCHASE =====
+    // verify purchase
     const verifyUrl = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/products/${productId}/tokens/${purchaseToken}`;
     const verifyRes = await fetch(verifyUrl, {
       headers: { Authorization: `Bearer ${tokenData.access_token}` },
