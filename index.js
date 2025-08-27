@@ -31,7 +31,7 @@ export default {
       );
     }
 
-    // ===== helper & JWT code tetap sama =====
+    // ===== helper & JWT =====
     function base64url(source) {
       let encoded = btoa(String.fromCharCode(...new Uint8Array(source)));
       return encoded.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -75,21 +75,35 @@ export default {
     });
 
     const tokenData = await tokenRes.json();
+
     if (!tokenData.access_token) {
-      return new Response(JSON.stringify({ error: "Gagal ambil access_token", detail: tokenData }, null, 2), {
+      return new Response(JSON.stringify({
+        error: "Gagal ambil access_token",
+        jwt,
+        detail: tokenData
+      }, null, 2), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 500,
       });
     }
 
     const verifyUrl = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/products/${productId}/tokens/${purchaseToken}`;
+
     const verifyRes = await fetch(verifyUrl, {
       headers: { Authorization: `Bearer ${tokenData.access_token}` },
     });
 
     const purchaseData = await verifyRes.json();
 
-    return new Response(JSON.stringify(purchaseData, null, 2), {
+    // Tambahkan debug info
+    const debug = {
+      jwt,
+      access_token: tokenData.access_token,
+      verifyUrl,
+      purchaseData
+    };
+
+    return new Response(JSON.stringify(debug, null, 2), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   },
