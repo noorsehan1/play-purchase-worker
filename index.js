@@ -1,50 +1,37 @@
 export default {
   async fetch(request, env) {
-    const corsHeaders = {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-    };
 
-    // Handle CORS preflight
-    if (request.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders });
+    const clientEmail = env.GOOGLE_CLIENT_EMAIL;
+    const privateKey = env.GOOGLE_PRIVATE_KEY.replace(/\\n/g,"\n");
+    const tokenUri = env.GOOGLE_TOKEN_URI;
+
+    if (request.method !== "POST") {
+      return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405 });
     }
 
     let packageName, productId, purchaseToken;
-
     try {
       const body = await request.json();
       packageName = body.packageName;
       productId = body.productId;
       purchaseToken = body.purchaseToken;
-    } catch (err) {
-      return new Response(JSON.stringify({ error: "Body JSON tidak valid" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    } catch {
+      return new Response(JSON.stringify({ error: "Body JSON tidak valid" }), { status: 400 });
     }
 
     if (!packageName || !productId || !purchaseToken) {
-      return new Response(JSON.stringify({
-        error: "Harus kirim packageName, productId, dan purchaseToken di body JSON"
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
+      return new Response(JSON.stringify({ error: "packageName, productId, purchaseToken wajib" }), { status: 400 });
     }
 
-    // ======== JWT Signing Setup =========
     function base64url(source) {
       let encoded = btoa(String.fromCharCode(...new Uint8Array(source)));
       return encoded.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
     }
 
-    const keyPem = env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n");
-    const keyLines = keyPem.replace("-----BEGIN PRIVATE KEY-----", "")
-      .replace("-----END PRIVATE KEY-----", "")
-      .replace(/\n/g, "");
-    const keyBytes = Uint8Array.from(atob(keyLines), c => c.charCodeAt(0));
+    const keyLines = privateKey.replace("-----BEGIN PRIVATE KEY-----","")
+      .replace("-----END PRIVATE KEY-----","")
+      .replace(/\n/g,"");
+    const keyBytes = Uint8Array.from(atob(keyLines), c=>c.charCodeAt(0));
 
     const cryptoKey = await crypto.subtle.importKey(
       "pkcs8",
@@ -54,59 +41,36 @@ export default {
       ["sign"]
     );
 
-    const jwtHeader = { alg: "RS256", typ: "JWT" };
-    const jwtClaimSet = {
-      iss: env.GOOGLE_CLIENT_EMAIL,
+    const header = { alg:"RS256", typ:"JWT" };
+    const now = Math.floor(Date.now()/1000);
+    const claim = {
+      iss: clientEmail,
       scope: "https://www.googleapis.com/auth/androidpublisher",
-      aud: env.GOOGLE_TOKEN_URI,
-      exp: Math.floor(Date.now() / 1000) + 3600,
-      iat: Math.floor(Date.now() / 1000),
+      aud: tokenUri,
+      iat: now,
+      exp: now + 3600
     };
 
     const encoder = new TextEncoder();
-    const encHeader = base64url(encoder.encode(JSON.stringify(jwtHeader)));
-    const encClaim = base64url(encoder.encode(JSON.stringify(jwtClaimSet)));
-    const signatureInput = encoder.encode(`${encHeader}.${encClaim}`);
-    const signature = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", cryptoKey, signatureInput);
-    const encSignature = base64url(signature);
-    const jwt = `${encHeader}.${encClaim}.${encSignature}`;
+    const encHeader = base64url(encoder.encode(JSON.stringify(header)));
+    const encClaim = base64url(encoder.encode(JSON.stringify(claim)));
+    const sigInput = encoder.encode(`${encHeader}.${encClaim}`);
+    const signature = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", cryptoKey, sigInput);
+    const encSig = base64url(signature);
+    const jwt = `${encHeader}.${encClaim}.${encSig}`;
 
-    // ======== Get access token from Google ========
-    const tokenRes = await fetch(env.GOOGLE_TOKEN_URI, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+    const tokenRes = await fetch(tokenUri, {
+      method:"POST",
+      headers:{ "Content-Type":"application/x-www-form-urlencoded" },
+      body:`grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`
     });
-
     const tokenData = await tokenRes.json();
+    if(!tokenData.access_token) return new Response(JSON.stringify({error:"Gagal ambil access_token"}), {status:500});
 
-    if (!tokenData.access_token) {
-      return new Response(JSON.stringify({
-        error: "Gagal ambil access_token",
-        jwt,
-        detail: tokenData
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 500,
-      });
-    }
-
-    // ======== Verify purchase ========
     const verifyUrl = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/products/${productId}/tokens/${purchaseToken}`;
-
-    const verifyRes = await fetch(verifyUrl, {
-      headers: {
-        Authorization: `Bearer ${tokenData.access_token}`
-      }
-    });
-
+    const verifyRes = await fetch(verifyUrl, { headers:{ Authorization:`Bearer ${tokenData.access_token}` }});
     const purchaseData = await verifyRes.json();
 
-    // Final response
-    return new Response(JSON.stringify({
-      purchaseData: purchaseData
-    }, null, 2), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(JSON.stringify({ purchaseData }), { headers:{ "Content-Type":"application/json" } });
   }
 };
