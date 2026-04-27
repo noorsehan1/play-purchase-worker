@@ -2,7 +2,7 @@ export default {
   async fetch(request, env) {
 
     const clientEmail = env.GOOGLE_CLIENT_EMAIL;
-    const privateKey = env.GOOGLE_PRIVATE_KEY.replace(/\\n/g,"\n");
+    const privateKey = env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n");
     const tokenUri = env.GOOGLE_TOKEN_URI;
 
     if (request.method !== "POST") {
@@ -28,10 +28,20 @@ export default {
       return encoded.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
     }
 
-    const keyLines = privateKey.replace("-----BEGIN PRIVATE KEY-----","")
-      .replace("-----END PRIVATE KEY-----","")
-      .replace(/\n/g,"");
-    const keyBytes = Uint8Array.from(atob(keyLines), c=>c.charCodeAt(0));
+    // Validasi private key tidak kosong
+    const keyLines = privateKey.replace("-----BEGIN PRIVATE KEY-----", "")
+      .replace("-----END PRIVATE KEY-----", "")
+      .replace(/\n/g, "");
+    
+    if (!keyLines) {
+      return new Response(JSON.stringify({ error: "Invalid private key configuration" }), { status: 500 });
+    }
+    
+    const binaryString = atob(keyLines);
+    const keyBytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      keyBytes[i] = binaryString.charCodeAt(i);
+    }
 
     const cryptoKey = await crypto.subtle.importKey(
       "pkcs8",
@@ -41,8 +51,8 @@ export default {
       ["sign"]
     );
 
-    const header = { alg:"RS256", typ:"JWT" };
-    const now = Math.floor(Date.now()/1000);
+    const header = { alg: "RS256", typ: "JWT" };
+    const now = Math.floor(Date.now() / 1000);
     const claim = {
       iss: clientEmail,
       scope: "https://www.googleapis.com/auth/androidpublisher",
@@ -59,18 +69,42 @@ export default {
     const encSig = base64url(signature);
     const jwt = `${encHeader}.${encClaim}.${encSig}`;
 
+    // Timeout untuk token request (race condition fix)
+    const tokenController = new AbortController();
+    const tokenTimeout = setTimeout(() => tokenController.abort(), 10000);
+    
     const tokenRes = await fetch(tokenUri, {
-      method:"POST",
-      headers:{ "Content-Type":"application/x-www-form-urlencoded" },
-      body:`grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+      signal: tokenController.signal
     });
+    
+    clearTimeout(tokenTimeout);
+    
     const tokenData = await tokenRes.json();
-    if(!tokenData.access_token) return new Response(JSON.stringify({error:"Gagal ambil access_token"}), {status:500});
+    if (!tokenData.access_token) {
+      return new Response(JSON.stringify({ error: "Gagal ambil access_token" }), { status: 500 });
+    }
 
-    const verifyUrl = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/products/${productId}/tokens/${purchaseToken}`;
-    const verifyRes = await fetch(verifyUrl, { headers:{ Authorization:`Bearer ${tokenData.access_token}` }});
+    // ENCODEURI COMPONENT (PENTING! kembali seperti kode awal)
+    const verifyUrl = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(packageName)}/purchases/products/${encodeURIComponent(productId)}/tokens/${encodeURIComponent(purchaseToken)}`;
+    
+    // Timeout untuk verify request (race condition fix)
+    const verifyController = new AbortController();
+    const verifyTimeout = setTimeout(() => verifyController.abort(), 10000);
+    
+    const verifyRes = await fetch(verifyUrl, {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+      signal: verifyController.signal
+    });
+    
+    clearTimeout(verifyTimeout);
+    
     const purchaseData = await verifyRes.json();
 
-    return new Response(JSON.stringify({ purchaseData }), { headers:{ "Content-Type":"application/json" } });
+    return new Response(JSON.stringify({ purchaseData }), { 
+      headers: { "Content-Type": "application/json" } 
+    });
   }
 };
