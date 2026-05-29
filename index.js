@@ -1,5 +1,5 @@
 // Map untuk menyimpan request yang sedang diproses
-const requestMemory = new Map();
+ const requestMemory = new Map();
 
 export default {
   async fetch(request, env) {
