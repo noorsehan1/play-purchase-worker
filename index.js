@@ -1,3 +1,6 @@
+// Map untuk menyimpan request yang sedang diproses
+const requestMemory = new Map();
+
 export default {
   async fetch(request, env) {
 
@@ -23,6 +26,32 @@ export default {
       return new Response(JSON.stringify({ error: "packageName, productId, purchaseToken wajib" }), { status: 400 });
     }
 
+    // ========== CEK DUPLICATE REQUEST ==========
+    const uniqueKey = `${packageName}|${productId}|${purchaseToken}`;
+    
+    if (requestMemory.has(uniqueKey)) {
+      // Duplicate! Langsung tolak
+      return new Response(JSON.stringify({ 
+        error: "Duplicate request", 
+        message: "Token ini sudah diproses dalam 10 detik terakhir"
+      }), { 
+        status: 409,
+        headers: { "Content-Type": "application/json" } 
+      });
+    }
+
+    // Simpan request ke memory dan set timer 10 detik
+    requestMemory.set(uniqueKey, {
+      packageName,
+      productId,
+      purchaseToken,
+      time: Date.now()
+    });
+
+    setTimeout(() => {
+      requestMemory.delete(uniqueKey);
+    }, 10000);
+
     function base64url(source) {
       let encoded = btoa(String.fromCharCode(...new Uint8Array(source)));
       return encoded.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -34,6 +63,7 @@ export default {
       .replace(/\n/g, "");
     
     if (!keyLines) {
+      requestMemory.delete(uniqueKey);
       return new Response(JSON.stringify({ error: "Invalid private key configuration" }), { status: 500 });
     }
     
@@ -84,6 +114,7 @@ export default {
     
     const tokenData = await tokenRes.json();
     if (!tokenData.access_token) {
+      requestMemory.delete(uniqueKey);
       return new Response(JSON.stringify({ error: "Gagal ambil access_token" }), { status: 500 });
     }
 
